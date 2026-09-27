@@ -1,0 +1,23 @@
+Turning Hand Movements Into a Touchless Drawing Interface.
+That led me to build Air Canvas AI — a real-time touchless drawing system where a webcam and hand 
+movvements become the input. 🖐️
+
+The system uses hand landmarks to track the index fingertip, which acts as a virtual brush.
+
+🔍  built
+
+• Real-time hand tracking
+• 21-point hand landmark detection
+• Index-finger based drawing
+• Gesture-based controls
+• Multiple drawing colors
+• Eraser and canvas clearing
+• Drawing save functionality
+• Real-time FPS monitoring
+
+🧠 How it works
+
+Webcam → OpenCV → MediaPipe Hands → Hand Landmarks → Gesture Detection → Virtual Canvas
+Make a similar project, that detects hands and allow a person to draw with index finger, and
+ change color with fist. Since Docker won't allow access to webcam, we will create a viraul 
+environment and work on that.
