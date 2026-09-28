@@ -144,14 +144,41 @@ async function startCamera() {
 
   setStatus("Requesting camera access…");
 
+  if (!window.isSecureContext) {
+    setStatus(
+      "This page isn't running in a secure context (HTTPS or localhost), so the browser " +
+        "won't allow camera access at all -- no permission prompt will even appear. " +
+        "Serve it via `python3 -m http.server` and open http://localhost:PORT, or use the " +
+        "hosted version instead.",
+      true
+    );
+    startBtn.disabled = false;
+    return;
+  }
+
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    setStatus("This browser doesn't support camera access (getUserMedia unavailable). Try an up-to-date Chrome, Firefox, Edge, or Safari.", true);
+    startBtn.disabled = false;
+    return;
+  }
+
   try {
     stream = await navigator.mediaDevices.getUserMedia({
       video: { width: { ideal: 1280 }, height: { ideal: 720 } },
       audio: false,
     });
   } catch (err) {
-    console.error(err);
-    setStatus("Camera access was denied or unavailable. Allow camera access and try again.", true);
+    console.error("getUserMedia failed:", err.name, err.message, err);
+    const messages = {
+      NotAllowedError: "Camera permission was denied. Click the camera icon in the address bar to allow it, then reload.",
+      NotFoundError: "No camera was found on this device.",
+      NotReadableError: "The camera is already in use by another app or browser tab. Close it and try again.",
+      OverconstrainedError: "No camera satisfies the requested resolution. This is a bug -- please report it.",
+      SecurityError: "Camera access is blocked by browser security settings for this page.",
+      AbortError: "Camera access was interrupted. Try again.",
+    };
+    const message = messages[err.name] || `Camera access failed: ${err.name || "unknown error"} -- ${err.message || "no details"}. Check the browser console for more.`;
+    setStatus(message, true);
     startBtn.disabled = false;
     return;
   }
