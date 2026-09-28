@@ -46,7 +46,7 @@ html, body {
   justify-content: center;
   align-items: flex-start;
   padding: 20px;
-  max-width: 1200px;
+  max-width: 1600px;
   margin: 0 auto;
 }
 
@@ -54,14 +54,18 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  flex: 1 1 640px;
-  max-width: 900px;
+  flex: 3 1 800px;
+  max-width: 1200px;
 }
 
 .stage {
   position: relative;
   width: 100%;
-  aspect-ratio: 4 / 3;
+  /* Matches the 1280x720 (16:9) camera request in app.js -- the canvas
+     stretches to fill whatever box shape it's given regardless of its
+     actual pixel content, so a mismatched ratio here visibly squashes
+     the picture. */
+  aspect-ratio: 16 / 9;
   background: #000;
   border-radius: var(--radius);
   overflow: hidden;

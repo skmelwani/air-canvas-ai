@@ -247,6 +247,14 @@ function landmarkPixels(landmarks, width, height) {
   return landmarks.map((lm) => ({ x: lm.x * width, y: lm.y * height }));
 }
 
+function drawMirroredVideoFrame(ctx, width, height) {
+  ctx.save();
+  ctx.translate(width, 0);
+  ctx.scale(-1, 1);
+  ctx.drawImage(video, 0, 0, width, height);
+  ctx.restore();
+}
+
 function drawHandSkeleton(ctx, pts, width) {
   ctx.strokeStyle = "rgba(255,255,255,0.8)";
   ctx.lineWidth = 1;
@@ -352,12 +360,7 @@ function renderFrame(now) {
 
   const results = handLandmarker.detectForVideo(video, now);
 
-  // Draw the mirrored webcam frame as the base layer.
-  outCtx.save();
-  outCtx.translate(width, 0);
-  outCtx.scale(-1, 1);
-  outCtx.drawImage(video, 0, 0, width, height);
-  outCtx.restore();
+  drawMirroredVideoFrame(outCtx, width, height);
 
   let gesture = "none";
 
@@ -443,9 +446,23 @@ clearBtn.addEventListener("click", () => {
 
 saveBtn.addEventListener("click", () => {
   if (!drawLayer) return;
+
+  // Composite camera frame + drawing only -- deliberately leaves out the
+  // skeleton dots / gesture legend / FPS text, which are live debug UI,
+  // not part of the picture someone wants to keep.
+  const snapshot = document.createElement("canvas");
+  snapshot.width = drawLayer.width;
+  snapshot.height = drawLayer.height;
+  const snapCtx = snapshot.getContext("2d");
+
+  if (video.readyState >= 2) {
+    drawMirroredVideoFrame(snapCtx, snapshot.width, snapshot.height);
+  }
+  snapCtx.drawImage(drawLayer, 0, 0);
+
   const link = document.createElement("a");
-  link.download = `air-canvas-drawing-${Date.now()}.png`;
-  link.href = drawLayer.toDataURL("image/png");
+  link.download = `air-canvas-${Date.now()}.png`;
+  link.href = snapshot.toDataURL("image/png");
   link.click();
 });
 
