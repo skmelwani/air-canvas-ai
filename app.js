@@ -104,6 +104,10 @@ let prevPoint = null;
 
 let lastFrameTime = performance.now();
 const fpsHistory = [];
+let frameErrorStreak = 0;
+const MAX_CONSECUTIVE_FRAME_ERRORS = 5;
+let notReadyStreak = 0;
+const MAX_NOT_READY_STREAK = 180; // ~3s at 60fps
 
 function setStatus(message, isError = false) {
   statusText.textContent = message;
@@ -207,6 +211,8 @@ async function startCamera() {
   drawLayer.height = height;
   drawCtx = drawLayer.getContext("2d");
   prevPoint = null;
+  frameErrorStreak = 0;
+  notReadyStreak = 0;
 
   overlayMsg.classList.add("hidden");
   clearBtn.disabled = false;
@@ -292,12 +298,27 @@ function renderLoop(now) {
 
   try {
     renderFrame(now);
+    frameErrorStreak = 0;
   } catch (err) {
     // A single bad frame must never silently kill the loop -- without this,
     // one early exception (e.g. detectForVideo called before the video has
     // real data) would stop requestAnimationFrame from ever rescheduling,
     // leaving the canvas frozen with nothing drawn to it.
-    console.error("Frame processing error:", err);
+    frameErrorStreak++;
+    console.error(`Frame processing error (${frameErrorStreak}/${MAX_CONSECUTIVE_FRAME_ERRORS}):`, err);
+
+    if (frameErrorStreak >= MAX_CONSECUTIVE_FRAME_ERRORS) {
+      // Every recent frame failed the same way -- this isn't a one-off
+      // glitch, so stop and surface it on the page instead of leaving a
+      // silently frozen black canvas with the error only in devtools.
+      stopCamera();
+      setStatus(
+        `Video processing kept failing: ${err.name || "Error"} -- ${err.message || String(err)}. ` +
+          "Check the browser console for the full error, then try again.",
+        true
+      );
+      return;
+    }
   }
 
   rafId = requestAnimationFrame(renderLoop);
@@ -308,8 +329,26 @@ function renderFrame(now) {
   const height = output.height;
 
   if (width === 0 || height === 0 || video.readyState < 2) {
+    notReadyStreak++;
+    if (notReadyStreak === MAX_NOT_READY_STREAK) {
+      const trackState = stream && stream.getVideoTracks()[0] ? stream.getVideoTracks()[0].readyState : "no track";
+      console.error(
+        "Video never became ready to draw:",
+        `canvas=${width}x${height}`,
+        `video.readyState=${video.readyState}`,
+        `video.videoWidth/Height=${video.videoWidth}x${video.videoHeight}`,
+        `track.readyState=${trackState}`
+      );
+      setStatus(
+        `The camera stream connected, but no video frames ever arrived (canvas ${width}x${height}, ` +
+          `video.readyState=${video.readyState}, track=${trackState}). This looks like a browser/driver issue ` +
+          "rather than a permissions one -- check the browser console for details.",
+        true
+      );
+    }
     return; // camera frame not ready yet this tick
   }
+  notReadyStreak = 0;
 
   const results = handLandmarker.detectForVideo(video, now);
 
