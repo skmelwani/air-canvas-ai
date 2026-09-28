@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Air Canvas AI</title>
+  <meta name="description" content="Touchless drawing in the browser using real-time hand tracking." />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>Air Canvas AI</h1>
+    <p class="subtitle">Touchless drawing, powered by your webcam and hand-tracking &mdash; runs entirely in this browser tab.</p>
+  </header>
+
+  <main class="layout">
+    <div class="stage-wrap">
+      <div class="stage" id="stage">
+        <video id="video" playsinline muted></video>
+        <canvas id="output"></canvas>
+        <div class="overlay-msg" id="overlayMsg">
+          <button id="startBtn" class="primary-btn">Start Camera</button>
+          <p id="statusText" class="status-text"></p>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button id="clearBtn" disabled>Clear Canvas</button>
+        <button id="saveBtn" disabled>Save Drawing</button>
+        <button id="stopBtn" disabled>Stop Camera</button>
+      </div>
+    </div>
+
+    <aside class="guide">
+      <h2>Gestures</h2>
+      <ul class="gesture-list">
+        <li><span class="swatch" style="background:#8b4513"></span><strong>Index only</strong> &mdash; draw Brown</li>
+        <li><span class="swatch" style="background:#0064ff"></span><strong>Middle only</strong> &mdash; draw Blue</li>
+        <li><span class="swatch" style="background:#00c800"></span><strong>Ring only</strong> &mdash; draw Green</li>
+        <li><span class="swatch eraser-swatch"></span><strong>Thumb only</strong> &mdash; Eraser</li>
+        <li><span class="swatch fist-swatch"></span><strong>Fist</strong> &mdash; no drawing</li>
+      </ul>
+      <p class="note">
+        Only the finger you want active should be extended &mdash; the rest curled in.
+        A relaxed pointing hand with the thumb slightly out still counts as "index only."
+      </p>
+      <h2>How it works</h2>
+      <p class="note">
+        Each frame is analyzed by MediaPipe's HandLandmarker (running fully on-device via WebAssembly)
+        to find 21 hand landmarks. Simple geometry on those points decides which single finger is
+        extended, which selects a color and moves the brush &mdash; the same logic as the original
+        Python desktop version of this project.
+      </p>
+      <p class="note privacy">
+        Nothing is uploaded: video never leaves your device. Drawings save straight to your downloads.
+      </p>
+    </aside>
+  </main>
+
+  <footer class="footer">
+    <a href="https://github.com/skmelwani/air-canvas-ai" target="_blank" rel="noopener">Source on GitHub</a>
+  </footer>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
