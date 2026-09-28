@@ -184,6 +184,17 @@ async function startCamera() {
   }
 
   video.srcObject = stream;
+
+  // videoWidth/videoHeight are only guaranteed to be populated once
+  // 'loadedmetadata' fires -- reading them right after play() resolves is a
+  // race in some browsers and can yield 0, producing a 0x0 canvas (i.e. a
+  // black box, since the container's own background shows through).
+  if (video.readyState < 1 || video.videoWidth === 0) {
+    await new Promise((resolve, reject) => {
+      video.addEventListener("loadedmetadata", () => resolve(), { once: true });
+      video.addEventListener("error", () => reject(new Error("Video element failed to load the camera stream.")), { once: true });
+    });
+  }
   await video.play();
 
   const width = video.videoWidth;
@@ -279,8 +290,26 @@ function drawGestureLegend(ctx, activeGesture) {
 function renderLoop(now) {
   if (!running) return;
 
+  try {
+    renderFrame(now);
+  } catch (err) {
+    // A single bad frame must never silently kill the loop -- without this,
+    // one early exception (e.g. detectForVideo called before the video has
+    // real data) would stop requestAnimationFrame from ever rescheduling,
+    // leaving the canvas frozen with nothing drawn to it.
+    console.error("Frame processing error:", err);
+  }
+
+  rafId = requestAnimationFrame(renderLoop);
+}
+
+function renderFrame(now) {
   const width = output.width;
   const height = output.height;
+
+  if (width === 0 || height === 0 || video.readyState < 2) {
+    return; // camera frame not ready yet this tick
+  }
 
   const results = handLandmarker.detectForVideo(video, now);
 
@@ -358,8 +387,6 @@ function renderLoop(now) {
   outCtx.fillText(`FPS: ${fps.toFixed(1)}`, 10, height - 34);
   outCtx.fillStyle = "#ffff00";
   outCtx.fillText(`Gesture: ${gesture}`, 10, height - 12);
-
-  rafId = requestAnimationFrame(renderLoop);
 }
 
 // --------------------------------------------------------------------------- //
