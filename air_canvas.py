@@ -2,12 +2,15 @@
 Air Canvas AI
 =============
 A real-time, touchless drawing system. A webcam feed is analyzed with
-MediaPipe's HandLandmarker to find 21 hand landmarks per frame. The index
-fingertip acts as a virtual brush:
+MediaPipe's HandLandmarker to find 21 hand landmarks per frame. Whichever
+finger you extend on its own acts as a virtual brush of its own color:
 
-    - Point with only your index finger extended  -> draw
-    - Make a fist (all fingers curled)             -> cycle brush color
-    - Anything else (open palm, etc.)               -> pen lifted, no drawing
+    - Only index finger extended   -> draw in Brown, brush follows index tip
+    - Only middle finger extended  -> draw in Blue, brush follows middle tip
+    - Only ring finger extended    -> draw in Green, brush follows ring tip
+    - Only thumb extended          -> Eraser, follows thumb tip
+    - Fist (everything curled)     -> pen lifted, no drawing
+    - Anything else (open palm, etc.) -> pen lifted, no drawing
 
 Keyboard shortcuts (window must be focused):
     c - clear the canvas
@@ -41,18 +44,6 @@ CAM_WIDTH, CAM_HEIGHT = 1280, 720
 BRUSH_THICKNESS = 8
 ERASER_THICKNESS = 45
 
-# (name, BGR color). "Eraser" paints with the canvas background color, which
-# the compositor treats as transparent -- so it visually erases strokes.
-COLOR_PALETTE = [
-    ("Blue", (255, 0, 0)),
-    ("Green", (0, 200, 0)),
-    ("Red", (0, 0, 255)),
-    ("Yellow", (0, 220, 220)),
-    ("Eraser", (0, 0, 0)),
-]
-
-FIST_COOLDOWN_SEC = 1.0  # minimum time between fist-triggered color changes
-
 # 21-point hand landmark indices (MediaPipe hand model)
 WRIST = 0
 THUMB_TIP, THUMB_IP = 4, 3
@@ -60,6 +51,17 @@ INDEX_MCP, INDEX_PIP, INDEX_TIP = 5, 6, 8
 MIDDLE_PIP, MIDDLE_TIP = 10, 12
 RING_PIP, RING_TIP = 14, 16
 PINKY_PIP, PINKY_TIP = 18, 20
+
+# Each single-finger gesture maps to (display name, BGR color, tip landmark).
+# "Eraser" paints with the canvas background color, which the compositor
+# treats as transparent -- so it visually erases strokes.
+FINGER_ACTIONS = {
+    "index": ("Brown", (19, 69, 139), INDEX_TIP),
+    "middle": ("Blue", (255, 0, 0), MIDDLE_TIP),
+    "ring": ("Green", (0, 200, 0), RING_TIP),
+    "thumb": ("Eraser", (0, 0, 0), THUMB_TIP),
+}
+GESTURE_ORDER = ["index", "middle", "ring", "thumb"]  # legend/draw order
 
 
 # --------------------------------------------------------------------------- #
@@ -87,18 +89,32 @@ def fingers_extended(pts):
 
     # Thumb: extended when it's sticking out away from the palm, independent
     # of handedness. Compare thumb-tip-to-index-MCP distance against the
-    # palm's own scale (wrist-to-index-MCP distance).
+    # palm's own scale (wrist-to-index-MCP distance). The thumb now drives a
+    # dedicated gesture (eraser), so the threshold is kept generous.
     palm_scale = dist(WRIST, INDEX_MCP) + 1e-6
-    thumb = dist(THUMB_TIP, INDEX_MCP) > 0.8 * palm_scale
+    thumb = dist(THUMB_TIP, INDEX_MCP) > 0.6 * palm_scale
 
     return {"thumb": thumb, "index": index, "middle": middle, "ring": ring, "pinky": pinky}
 
 
 def classify_gesture(fingers):
-    """Map finger states to one of: 'draw', 'fist', 'other'."""
-    if fingers["index"] and not fingers["middle"] and not fingers["ring"] and not fingers["pinky"]:
-        return "draw"
-    if not fingers["index"] and not fingers["middle"] and not fingers["ring"] and not fingers["pinky"]:
+    """
+    Map finger states to one of: 'index', 'middle', 'ring', 'thumb'
+    (exactly that finger extended, on its own, among the draw fingers),
+    'fist' (thumb/index/middle/ring all curled), or 'other' (anything
+    ambiguous, e.g. multiple fingers up). Pinky state is ignored throughout.
+    """
+    index, middle, ring, thumb = fingers["index"], fingers["middle"], fingers["ring"], fingers["thumb"]
+
+    if index and not middle and not ring:
+        return "index"
+    if middle and not index and not ring:
+        return "middle"
+    if ring and not index and not middle:
+        return "ring"
+    if thumb and not index and not middle and not ring:
+        return "thumb"
+    if not thumb and not index and not middle and not ring:
         return "fist"
     return "other"
 
@@ -117,19 +133,33 @@ def draw_hand_skeleton(frame, pts):
         cv2.circle(frame, (int(x), int(y)), 3, (0, 255, 255), -1)
 
 
-def draw_color_palette(frame, active_index):
-    swatch_w = 90
-    for i, (name, color) in enumerate(COLOR_PALETTE):
+def draw_gesture_legend(frame, active_gesture):
+    """Static legend of which finger draws which color, plus a fist swatch.
+    The swatch matching the currently active gesture is highlighted."""
+    swatch_w = 150
+    for i, key in enumerate(GESTURE_ORDER):
+        name, color, _ = FINGER_ACTIONS[key]
+        label = f"{key.capitalize()}: {name}"
         x0 = 10 + i * (swatch_w + 8)
         y0 = 10
         x1, y1 = x0 + swatch_w, y0 + 55
         display_color = (60, 60, 60) if name == "Eraser" else color
         cv2.rectangle(frame, (x0, y0), (x1, y1), display_color, -1)
-        border_color = (255, 255, 255) if i == active_index else (120, 120, 120)
-        thickness = 4 if i == active_index else 1
+        border_color = (255, 255, 255) if key == active_gesture else (120, 120, 120)
+        thickness = 4 if key == active_gesture else 1
         cv2.rectangle(frame, (x0, y0), (x1, y1), border_color, thickness)
-        cv2.putText(frame, name, (x0 + 4, y1 + 18), cv2.FONT_HERSHEY_SIMPLEX,
+        cv2.putText(frame, label, (x0 + 4, y1 + 18), cv2.FONT_HERSHEY_SIMPLEX,
                     0.5, (255, 255, 255), 1, cv2.LINE_AA)
+
+    # Extra swatch showing the "no drawing" fist gesture.
+    fist_x0 = 10 + len(GESTURE_ORDER) * (swatch_w + 8)
+    fist_x1 = fist_x0 + swatch_w
+    cv2.rectangle(frame, (fist_x0, 10), (fist_x1, 65), (40, 40, 40), -1)
+    border_color = (255, 255, 255) if active_gesture == "fist" else (120, 120, 120)
+    thickness = 4 if active_gesture == "fist" else 1
+    cv2.rectangle(frame, (fist_x0, 10), (fist_x1, 65), border_color, thickness)
+    cv2.putText(frame, "Fist: No Draw", (fist_x0 + 4, 83), cv2.FONT_HERSHEY_SIMPLEX,
+                0.5, (255, 255, 255), 1, cv2.LINE_AA)
 
 
 def composite_canvas_on_frame(frame, canvas):
@@ -176,14 +206,15 @@ def main():
 
     canvas = None
     prev_point = None
-    color_index = 0
-    last_fist_time = 0.0
     prev_frame_time = time.time()
     fps_history = deque(maxlen=30)
 
     print("Air Canvas AI running.")
-    print("  Point with your index finger to draw.")
-    print("  Make a fist to cycle to the next color / eraser.")
+    print("  Index only  -> draw Brown")
+    print("  Middle only -> draw Blue")
+    print("  Ring only   -> draw Green")
+    print("  Thumb only  -> Eraser")
+    print("  Fist        -> no drawing")
     print("  Keys: [c] clear canvas   [s] save drawing   [q] quit")
 
     start_time = time.time()
@@ -212,33 +243,25 @@ def main():
             gesture = classify_gesture(fingers)
             draw_hand_skeleton(frame, pts)
 
-            index_tip = (int(pts[INDEX_TIP][0]), int(pts[INDEX_TIP][1]))
-
-            if gesture == "draw":
-                name, color = COLOR_PALETTE[color_index]
+            if gesture in FINGER_ACTIONS:
+                name, color, tip_idx = FINGER_ACTIONS[gesture]
+                tip = (int(pts[tip_idx][0]), int(pts[tip_idx][1]))
                 thickness = ERASER_THICKNESS if name == "Eraser" else BRUSH_THICKNESS
                 if prev_point is not None:
-                    cv2.line(canvas, prev_point, index_tip, color, thickness)
+                    cv2.line(canvas, prev_point, tip, color, thickness)
                 else:
-                    cv2.circle(canvas, index_tip, thickness // 2, color, -1)
-                prev_point = index_tip
-                cv2.circle(frame, index_tip, 10, (0, 255, 0), 2)
+                    cv2.circle(canvas, tip, thickness // 2, color, -1)
+                prev_point = tip
+                cv2.circle(frame, tip, 10, (0, 255, 0), 2)
 
-            elif gesture == "fist":
-                prev_point = None
-                now = time.time()
-                if now - last_fist_time > FIST_COOLDOWN_SEC:
-                    color_index = (color_index + 1) % len(COLOR_PALETTE)
-                    last_fist_time = now
-
-            else:
+            else:  # 'fist' or 'other' -> pen lifted, no drawing
                 prev_point = None
         else:
             prev_point = None
 
         output = composite_canvas_on_frame(frame, canvas)
 
-        draw_color_palette(output, color_index)
+        draw_gesture_legend(output, gesture)
 
         now = time.time()
         fps_history.append(1.0 / max(now - prev_frame_time, 1e-6))

@@ -21,14 +21,24 @@ Webcam -> OpenCV -> MediaPipe HandLandmarker -> Hand Landmarks
 
 ## Controls
 
+Each finger draws in its own color when it's the *only* one extended — no
+color-cycling or mode-switching required, just change which finger is up.
+
 | Input | Action |
 |---|---|
-| Point with only your index finger extended | Draw |
-| Make a fist (all fingers curled) | Cycle to the next color / eraser |
+| Only index finger extended | Draw **Brown**, brush follows the index tip |
+| Only middle finger extended | Draw **Blue**, brush follows the middle tip |
+| Only ring finger extended | Draw **Green**, brush follows the ring tip |
+| Only thumb extended | **Eraser**, follows the thumb tip |
+| Fist (everything curled) | Pen lifted — nothing is drawn |
 | Any other hand pose, or no hand visible | Pen lifted — nothing is drawn |
 | `c` key | Clear the canvas |
 | `s` key | Save the current drawing to `saved_drawings/` |
 | `q` or `Esc` | Quit |
+
+The pinky isn't used by any gesture, and thumb detection is deliberately
+lenient (it just checks the thumb sticks out from the palm), so a relaxed
+pointing hand with the thumb slightly out still counts as "index only."
 
 ## How it works
 
@@ -40,7 +50,8 @@ Webcam -> OpenCV -> MediaPipe HandLandmarker -> Hand Landmarks
 3. **Gesture detection** — Simple geometry on those points decides the gesture:
    a finger counts as "extended" if its tip sits above its middle knuckle in the
    image; the thumb is checked separately by comparing its distance from the palm.
-   Only-index-extended → draw; everything curled → fist.
+   Whichever of index/middle/ring/thumb is extended *on its own* selects that
+   finger's color and brush position; everything curled is a fist (no drawing).
 4. **Virtual canvas** — A persistent black image the same size as the frame
    accumulates strokes across frames. While drawing, a line is drawn from the
    fingertip's previous position to its current one each frame, so fast motion
